@@ -30,21 +30,19 @@ class Mnisttox(Dataset):
                 return img, label
             i += 1
 
-class Mnisttoy(Dataset):
+class Mnisttoxy(Dataset):
     def __init__(self, datasets ,label):
         self.dataset = datasets
         self.label = label
-        self.new_index = 0
         
     def __len__(self):
-        return int((len(self.dataset)/10))
+        return int((len(self.dataset)/10)*2)
 
     def __getitem__(self, index):
         i = 0
         while(True):
-            img,label = self.dataset[self.new_index+i]
-            if label == self.label:
-                self.new_index = self.new_index+i+1
+            img,label = self.dataset[index+i]
+            if label == self.label[0]or label == self.label[1]:
                 return img, label
             i += 1
 
@@ -75,7 +73,7 @@ class Autoencoder(nn.Module):
 ##################パラメータ############
 z_dim = 28*28 #2 #16 
 batch_size = 16
-num_epochs = 1
+num_epochs = 10
 learning_rate = 0.0002 
 cuda = True
 
@@ -137,8 +135,8 @@ for epoch in range(num_epochs):
 
 ########################################
 test_dataset = MNIST(mount_dir + 'data', train=False,download=True, transform=img_transform)
-test_1_9 = Mnisttoy(test_dataset,9)
-test_loader = DataLoader(test_1_9, batch_size=len(test_1_9), shuffle=False)
+test_1_9 = Mnisttoxy(test_dataset,[1,9])
+test_loader = DataLoader(test_1_9, batch_size=len(test_1_9), shuffle=True)
 
 data = torch.zeros(6,28*28)
 j = 0
