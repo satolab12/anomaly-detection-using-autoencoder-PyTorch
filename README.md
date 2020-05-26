@@ -18,7 +18,7 @@ PyTorchを用いた，AutoencoderによるMNISTの異常検知プログラムで
 
 ## Usage
 - main.pyで学習．save dirにサンプルが保存されます．
-Learn with main.py.The sample is saved in save dir.
+Learn with main.py. The sample is saved in save dir.
 
 ## References
 差分画像の計算と表示部分
