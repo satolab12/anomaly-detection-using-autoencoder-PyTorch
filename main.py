@@ -1,50 +1,27 @@
-###############libraryの読み込み
+import os
 import numpy as np
 import torch
 from torch import nn
 from torch.autograd import Variable
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader,Dataset
 from torchvision import transforms
 from torchvision.datasets import MNIST
 import pylab
-import os
-from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 
-mount_dir = "./drive/My Drive/"
-
-#######
 class Mnisttox(Dataset):
-    def __init__(self, datasets ,label):
-        self.dataset = datasets
-        self.label = label
+    def __init__(self, datasets ,labels:list):
+        self.dataset = [datasets[i][0] for i in range(len(datasets))
+                        if datasets[i][1] in labels ]
+        self.labels = labels
+        self.len_oneclass = int(len(self.dataset)/10)
 
     def __len__(self):
-        return int(len(self.dataset)/10)
+        return int(len(self.dataset))
 
     def __getitem__(self, index):
-        i = 0
-        while(True):
-            img,label = self.dataset[index+i]
-            if label == self.label:
-                return img, label
-            i += 1
-
-class Mnisttoxy(Dataset):
-    def __init__(self, datasets ,label):
-        self.dataset = datasets
-        self.label = label
-        
-    def __len__(self):
-        return int((len(self.dataset)/10)*2)
-
-    def __getitem__(self, index):
-        i = 0
-        while(True):
-            img,label = self.dataset[index+i]
-            if label == self.label[0]or label == self.label[1]:
-                return img, label
-            i += 1
+        img = self.dataset[index]
+        return img,[]
 
 class Autoencoder(nn.Module):
     def __init__(self,z_dim):
@@ -54,7 +31,7 @@ class Autoencoder(nn.Module):
             nn.ReLU(True),
             nn.Linear(256, 128),
             nn.ReLU(True),
-            nn.Linear(128 , z_dim))
+            nn.Linear(128, z_dim))
 
         self.decoder = nn.Sequential(
             nn.Linear(z_dim, 128),
@@ -70,13 +47,12 @@ class Autoencoder(nn.Module):
         xhat = self.decoder(z)
         return xhat
 
-##################パラメータ############
-z_dim = 28*28 #2 #16 
+z_dim = 64
 batch_size = 16
 num_epochs = 10
-learning_rate = 0.0002 
+learning_rate = 3.0e-4
+n = 6 #number of test sample
 cuda = True
-
 model = Autoencoder(z_dim)
 mse_loss = nn.MSELoss()
 optimizer = torch.optim.Adam(model.parameters(),
@@ -85,21 +61,20 @@ optimizer = torch.optim.Adam(model.parameters(),
 
 if cuda:
     model.cuda()
-  
+
 img_transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.5, ), (0.5, ))  # [0,1] => [-1,1]
 ])
-
-train_dataset = MNIST(mount_dir + 'data', download=True, transform=img_transform)#手書き数字
-train_1 = Mnisttox(train_dataset,1)
+train_dataset = MNIST('./data', download=True,train=True, transform=img_transform)
+train_1 = Mnisttox(train_dataset,[1])
 train_loader = DataLoader(train_1, batch_size=batch_size, shuffle=True)
-losses = np.zeros(num_epochs*len(train_loader))
+losses = np.zeros(num_epochs)
 
-i = 0
-for epoch in range(num_epochs):   
-    for data in train_loader:
-        img, label = data
+for epoch in range(num_epochs):
+    i = 0
+    for img,_ in train_loader:
+
         x = img.view(img.size(0), -1)
 
         if cuda:
@@ -111,57 +86,48 @@ for epoch in range(num_epochs):
 
         # 出力画像（再構成画像）と入力画像の間でlossを計算
         loss = mse_loss(xhat, x)
-        losses[i] = loss 
-
+        losses[epoch] = losses[epoch] * (i / (i + 1.)) + loss * (1. / (i + 1.))
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         i += 1
-    
-    fig , ax = plt.subplots()
-    pylab.xlim(0, num_epochs)
-    pylab.ylim(0, 1)
-    x = np.linspace(0,num_epochs,len(losses))
-    ax.plot(x, losses, label='loss')
-    ax.legend()
-    plt.savefig(os.path.join(mount_dir + "experiments/save", 'loss.pdf'))
-    plt.close()
 
+    plt.figure()
+    pylab.xlim(0, num_epochs)
+    plt.plot(range(0, num_epochs), losses, label='loss')
+    plt.legend()
+    plt.savefig(os.path.join("./save/", 'loss.pdf'))
+    plt.close()
 
     print('epoch [{}/{}], loss: {:.4f}'.format(
         epoch + 1,
         num_epochs,
         loss))
 
-########################################
-test_dataset = MNIST(mount_dir + 'data', train=False,download=True, transform=img_transform)
-test_1_9 = Mnisttoxy(test_dataset,[1,9])
-test_loader = DataLoader(test_1_9, batch_size=len(test_1_9), shuffle=True)
+test_dataset = MNIST('./data', train=False,download=True, transform=img_transform)
+test_1_9 = Mnisttox(test_dataset,[1,9])
+test_loader = DataLoader(test_1_9, batch_size=len(test_dataset), shuffle=True)
 
-data = torch.zeros(6,28*28)
-j = 0
-for img ,label in (test_loader):
+for img,_ in test_loader:
     x = img.view(img.size(0), -1)
-    data = x
-    
-    if cuda:
-        data = Variable(data).cuda()
-    else:
-        data = Variable(data)
 
-    xhat = model(data)
-    data = data.cpu().detach().numpy()
+    if cuda:
+        x = Variable(x).cuda()
+    else:
+        x = Variable(x)
+
+    xhat = model(x)
+    x = x.cpu().detach().numpy()
     xhat = xhat.cpu().detach().numpy()
-    data = data/2 + 0.5
+    x = x/2 + 0.5
     xhat = xhat/2 + 0.5
-    
+
 # サンプル画像表示
-n = 6
 plt.figure(figsize=(12, 6))
 for i in range(n):
     # テスト画像を表示
     ax = plt.subplot(3, n, i + 1)
-    plt.imshow(data[i].reshape(28, 28))
+    plt.imshow(x[i].reshape(28, 28))
     plt.gray()
     ax.get_xaxis().set_visible(False)
     ax.get_yaxis().set_visible(False)
@@ -174,10 +140,10 @@ for i in range(n):
     ax.get_yaxis().set_visible(False)
 
     # 入出力の差分画像を計算
-    diff_img = np.abs((data[i] - xhat[i]))
+    diff_img = np.abs(x[i] - xhat[i])
 
     # 入出力の差分数値を計算
-    diff = np.sum(np.abs(data[i] - xhat[i]))
+    diff = np.sum(diff_img)
 
     # 差分画像と差分数値の表示
     ax = plt.subplot(3, n, i + 1 + n * 2)
@@ -187,6 +153,7 @@ for i in range(n):
     ax.get_yaxis().set_visible(True)
     ax.set_xlabel('score = ' + str(diff))
 
-plt.savefig(mount_dir + "experiments/save/result.png")
+plt.savefig("./save/result.png")
 plt.show()
 plt.close()
+
